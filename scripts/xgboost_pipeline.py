@@ -12,7 +12,7 @@ def main():
     print("Hello from 188 Flight Delay project")
 
     # Load the dataset
-    df = pd.read_csv("Airlines.csv")
+    df = pd.read_csv("../data/raw/Airlines.csv")
 
     # These columns have no effect on delay possibility
     columns_to_drop = [col for col in ["id", "Flight"] if col in df.columns]
