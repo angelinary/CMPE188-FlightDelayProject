@@ -1,78 +1,130 @@
-# CMPE188-FlightDelayProject
+# CMPE188 — Flight Delay Prediction
 
+**Course:** CMPE 188 · Machine Learning with Big Data · San José State University
 
-**Project title:** Flight Delay Prediction via Train XGBoost model and GridSearchCV.
-<br><br>
+---
 
+## Team
 
- **Team member names:** 
- 
- Harinandan Kotamsetti 
- 
- Angelina Ryabechenkova
- 					
- Aisha Syed			
- <br><br>
- 
- **Problem statement:**
- 
-Flight delays are a frequent and frustrating issue in air travel, often resulting from a combination 
- 
- of operational, environmental, and logistical factors. These delays can disrupt passenger schedules, 
- 
- increase costs, and reduce overall travel efficiency. Given the complexity and variability of these 
- 
- factors, predicting flight delays in advance remains a challenging but valuable task.
+| Name | Email | SID |
+|---|---|---|
+| Harinandan Kotamsetti | harinandan.kotamsetti@sjsu.edu | 016222167 |
+| Angelina Ryabechenkova | angelina.ryabechenkova@sjsu.edu | 018134165 |
+| Aisha Syed | aisha.syed@sjsu.edu | 016573219 |
 
-In this project, we aim to develop a machine learning-based system capable of predicting the likelihood
-	
-of flight delays using a large dataset of over 500,000 domestic U.S. flights. The dataset includes key 
+---
 
-features such as airline, flight number, origin and destination airports, day of the week, departure time, 
+## Problem Statement
 
-and flight duration. By analyzing patterns within this data, the model will learn relationships between 
+Flight delays are a frequent and costly issue in air travel, disrupting passenger schedules and reducing operational efficiency. Given the complexity of contributing factors — airline performance, route congestion, geography, and weather — predicting delays in advance is a challenging but valuable problem.
 
-these variables and delay outcomes.
+This project develops a machine learning system to predict the likelihood of a flight delay using a dataset of 500,000+ domestic U.S. flights. We compare Random Forest and XGBoost classifiers, enrich the base dataset with external weather and geographic data, and evaluate models rigorously with cross-validation and standard classification metrics.
 
-The system will be deployed as an interactive web application, where users can input specific flight 
-	
-details and receive a real-time prediction of whether a flight is likely to be delayed. In addition to 
+---
 
-predictions, the application will provide insights into contributing factors such as route congestion, 
+## Dataset
 
-airline performance trends, and time-based patterns.
+**Source:** [Kaggle — Airlines Dataset to Predict a Delay](https://www.kaggle.com/datasets/jimschacko/airlines-dataset-to-predict-a-delay)
 
-The primary goal of this project is to assist travelers in making more informed decisions by anticipating
-	
-potential delays before they occur. By leveraging data-driven predictions, the system aims to improve travel 
+| Feature | Type | Description |
+|---|---|---|
+| `Airline` | categorical | Carrier code (e.g., AA, DL, UA) |
+| `Flight` | int | Flight number (dropped — no predictive signal) |
+| `AirportFrom` | categorical | Origin airport IATA code |
+| `AirportTo` | categorical | Destination airport IATA code |
+| `DayOfWeek` | int (1–7) | Day of the week |
+| `Time` | int | Scheduled departure time in minutes from midnight |
+| `Length` | int | Flight duration in minutes |
+| `Delay` | binary (0/1) | Target — 1 = delayed |
 
-planning, reduce uncertainty, and enhance the overall passenger experience. Furthermore, this project 
+---
 
-demonstrates how machine learning techniques can be applied to real-world transportation problems, 
+## Modeling Pipeline
 
-highlighting the practical value of predictive analytics in improving operational efficiency and customer 
+```
+Raw Data
+  └─► Preprocessing (OneHotEncoder + MinMaxScaler)
+        └─► Feature Engineering (weather + derived features)
+              └─► Feature Selection (SelectKBest chi2)
+                    └─► Model Training (Random Forest / XGBoost)
+                          └─► Hyperparameter Tuning (GridSearchCV / RandomizedSearchCV)
+                                └─► Evaluation (ROC-AUC, confusion matrix, PR curves)
+```
 
-satisfaction.
-<br><br>
+---
 
-**Dataset or data source:**  [Kaggle dataset](https://www.kaggle.com/datasets/jimschacko/airlines-dataset-to-predict-a-delay?phase=FinishSSORegistration&returnUrl=/datasets/jimschacko/airlines-dataset-to-predict-a-delay/versions/1?resource=download&SSORegistrationToken=CfDJ8OuP2e3tnwRHgoiuJLZ8zbysdCnRbnsgcridZRXpr-NuS8q6RErNazcFQSnT4nwgx8ls7nkHNv4s2bUj7M5a7MyJZ-Lljvdj3lDv66ynv-foNATtycZCW93r5RH2nR9uS3hShogxMpOAAwJ2pkGnNukIBZmB-14kmOeb2NJW_5mpXb3v-n0fDfHqIHfmsP9FBzC0cUY2J_VMvBAOx9ZAfqeLwZe7EP3fR3idsKFThZhz29Bfgf3skGRJtnd8h4yE0NsclMIOcgQ1IFDO0JWqypCpHj4xH0lfcU75FfpbmDgES-HX7IO2xhdjAdV1KD_QIOzNI-YGFYMf2EaD12q6I3EpHQPk8Wt2CRTEcTn8&DisplayName=Angelina%20Ryabechenkova)
- 
- <br> 
- 
-**Planned model/system approach:**
+## Feature Engineering
 
-Raw data --> Split Columns (ColumnTransformer) --> Encode Categories + Scale Numbers -->
+### Weather Enrichment (OpenMeteo — free, no API key)
 
-Select Best Features --> Train XGBoost Model --> GridSearchCV refinement.
+The base dataset has no actual flight dates, so we use **climate normals** (monthly averages) from the [Open-Meteo Climate API](https://open-meteo.com/) matched to each airport via its geographic coordinates.
 
-We split data into columns, then convert text to numbers with data encoding (using 1-hot), since ML cannot read 
+Features added per origin and destination airport:
 
-text,  and needs numbers. Next, we select best features, as features like flight number have no affect on the delay
+- `lat`, `lon`, `elevation_ft` — geographic position
+- `avg_temperature` — monthly climate normal (°C)
+- `avg_precipitation` — monthly average precipitation (mm)
+- `avg_wind_speed` — monthly average wind speed (km/h)
 
- probability. We use XGBoost Model, which is a tree-based ML model to predict delays based on the selected features.
- 
- Lastly, we use GridSearchCV to try many combinations and find the best option to make predictions more effectively. 
+### Derived Features (from existing data)
 
- <br>
- 
-**Current implementation progress:** We had a chat about the project.
+| Feature | Description |
+|---|---|
+| `airline_delay_rate` | Historical delay rate per airline (target encoding, train-split only) |
+| `route_volume` | Flight count per origin→destination pair (proxy for congestion) |
+| `time_bucket` | Departure time bucketed: morning / afternoon / evening / night |
+| `is_peak_hour` | Flag for high-congestion windows (7–9 am, 5–8 pm) |
+
+### Future Dimensions (not yet implemented)
+
+- Aircraft type and age (FAA registry)
+- Airport runway capacity and scheduled departure density (BTS data)
+- Real-time METAR weather (requires actual flight dates)
+- Holiday / school break calendar flags
+- ATC delay codes (ASPM database)
+
+---
+
+## Repository Structure
+
+```text
+CMPE188-FlightDelayProject/
+├── data/
+│   ├── raw/
+│   │   └── Airlines.csv              # Source dataset (539k rows)
+│   └── processed/                    # Enriched datasets (git-ignored)
+├── notebooks/
+│   ├── 01_eda.ipynb                  # Exploratory data analysis
+│   ├── 02_feature_engineering.ipynb  # Weather enrichment + derived features
+│   ├── 03_model_baseline.ipynb       # RF vs XGBoost on raw features
+│   ├── 04_model_tuning.ipynb         # GridSearchCV / RandomizedSearchCV
+│   └── 05_evaluation.ipynb           # Confusion matrices, ROC, feature importance
+├── scripts/
+│   └── xgboost_pipeline.py           # Original baseline script (sklearn pipeline)
+├── README.md
+└── .gitignore
+```
+
+---
+
+## Setup
+
+```bash
+# Python 3.12+ recommended
+pip install pandas scikit-learn xgboost matplotlib seaborn requests
+
+# Run baseline script
+python scripts/xgboost_pipeline.py
+
+# Launch notebooks
+jupyter lab notebooks/
+```
+
+---
+
+## References
+
+- [Kaggle — Airlines Dataset to Predict a Delay](https://www.kaggle.com/datasets/jimschacko/airlines-dataset-to-predict-a-delay)
+- [Open-Meteo Climate API](https://open-meteo.com/)
+- [Priyanka Khivsara — Flight Delay Prediction (GitHub)](https://github.com/PriyankaKhivsara/flight-delay-prediction)
+- [Samith Sachidanandan — Airline Flight Delay Prediction (Kaggle)](https://www.kaggle.com/code/samithsachidanandan/airline-flight-delay-prediction)

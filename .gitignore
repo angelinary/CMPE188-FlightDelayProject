@@ -1,0 +1,21 @@
+# Data (processed outputs only — raw data is committed)
+data/processed/*
+!data/processed/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Environments
+.venv/
+env/
+*.egg-info/
+
+# OS
+.DS_Store
