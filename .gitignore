@@ -1,6 +1,8 @@
-# Data (processed outputs only — raw data is committed)
+# Data — raw and small processed files are committed; large enriched CSV is not
 data/processed/*
 !data/processed/.gitkeep
+!data/processed/airport_weather.csv
+# Airlines_enriched.csv (~103MB) exceeds GitHub's 100MB limit — regenerate via 02_feature_engineering.ipynb
 
 # Python
 __pycache__/
