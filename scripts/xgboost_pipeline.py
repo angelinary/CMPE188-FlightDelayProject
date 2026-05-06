@@ -1,5 +1,5 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
 from sklearn.pipeline import Pipeline
@@ -67,14 +67,33 @@ def main():
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # Missing GridSearch hyperparameter tuning (left for other teammembers) implementation
-    
-    
-    # Train model
-    model.fit(X_train, y_train)
+    # GridSearchCV hyperparameter tuning
+    param_grid = {
+        "classifier__n_estimators": [100, 200],
+        "classifier__max_depth": [3, 5],
+        "classifier__learning_rate": [0.05, 0.1],
+        "classifier__subsample": [0.8, 1.0],
+        "selector__k": [30, 50],
+    }
 
-    # Predict
-    y_pred = model.predict(X_test)
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+    grid_search = GridSearchCV(
+        model,
+        param_grid,
+        cv=cv,
+        scoring="roc_auc",
+        n_jobs=-1,
+    )
+
+    print("Running GridSearchCV...")
+    grid_search.fit(X_train, y_train)
+
+    print(f"\nBest Parameters: {grid_search.best_params_}")
+    print(f"Best ROC-AUC (CV): {grid_search.best_score_:.4f}")
+
+    # Predict with best model
+    y_pred = grid_search.predict(X_test)
 
     # Evaluate
     accuracy = accuracy_score(y_test, y_pred)
