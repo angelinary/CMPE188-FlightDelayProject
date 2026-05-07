@@ -17,8 +17,17 @@ if DATA_ROOT is None:
         "For teammates: set the environment variable or edit .env with your own path."
     )
 
-DATA_RAW = DATA_ROOT / "raw"
-DATA_PROCESSED = DATA_ROOT / "processed"
+# ── Part 1: Original Airlines.csv dataset ────────────────────────────────────
+DATA_PART1_RAW = DATA_ROOT / "part1" / "raw"
+DATA_PART1_PROCESSED = DATA_ROOT / "part1" / "processed"
+
+# Backward compatibility aliases
+DATA_RAW = DATA_PART1_RAW
+DATA_PROCESSED = DATA_PART1_PROCESSED
+
+# ── Part 2: BTS 2023 dataset (flights + weather + aircraft) ──────────────────
+DATA_PART2_RAW = DATA_ROOT / "part2" / "raw"
+DATA_PART2_PROCESSED = DATA_ROOT / "part2" / "processed"
 
 
 def assert_data_exists():
@@ -34,27 +43,58 @@ def assert_data_exists():
         )
 
 
-def load_airlines(raw=True):
+def load_csv(path):
     """
-    Load the Airlines CSV with cleaned column names.
+    Load a CSV with cleaned column names and stripped string values.
 
-    The raw CSV has leading/trailing spaces in column headers.
+    The raw CSV has leading/trailing spaces in column headers and values.
     This function strips them automatically.
     """
-    assert_data_exists()
-    if raw:
-        path = DATA_RAW / "Airlines.csv"
-    else:
-        path = DATA_PROCESSED / "Airlines_enriched.csv"
     df = pd.read_csv(path)
     df.columns = df.columns.str.strip()
+    for col in df.select_dtypes(include=["object"]).columns:
+        df[col] = df[col].str.strip()
     return df
 
 
+def load_airlines(raw=True):
+    """
+    Load the Part 1 Airlines CSV with cleaned column names.
+
+    DEPRECATED: use load_csv(path) for new code.
+    """
+    assert_data_exists()
+    if raw:
+        path = DATA_PART1_RAW / "Airlines.csv"
+    else:
+        path = DATA_PART1_PROCESSED / "Airlines_enriched.csv"
+    return load_csv(path)
+
+
+def load_flights_2023():
+    """Load the Part 2 BTS 2023 main flights table."""
+    assert_data_exists()
+    return load_csv(DATA_PART2_RAW / "US_flights_2023.csv")
+
+
+def load_weather_meteo():
+    """Load the Part 2 daily weather by airport."""
+    assert_data_exists()
+    return load_csv(DATA_PART2_RAW / "weather_meteo_by_airport.csv")
+
+
+def load_airports_geo():
+    """Load the Part 2 airport geolocation metadata."""
+    assert_data_exists()
+    return load_csv(DATA_PART2_RAW / "airports_geolocation.csv")
+
+
 if __name__ == "__main__":
-    print(f"DATA_ROOT:      {DATA_ROOT}")
-    print(f"DATA_RAW:       {DATA_RAW}")
-    print(f"DATA_PROCESSED: {DATA_PROCESSED}")
+    print(f"DATA_ROOT:         {DATA_ROOT}")
+    print(f"DATA_PART1_RAW:    {DATA_PART1_RAW}")
+    print(f"DATA_PART1_PROC:   {DATA_PART1_PROCESSED}")
+    print(f"DATA_PART2_RAW:    {DATA_PART2_RAW}")
+    print(f"DATA_PART2_PROC:   {DATA_PART2_PROCESSED}")
     try:
         assert_data_exists()
         print("Data directory accessible.")

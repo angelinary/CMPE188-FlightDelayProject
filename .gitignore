@@ -8,6 +8,16 @@ data/**
 !data/raw/.gitkeep
 !data/processed/
 !data/processed/.gitkeep
+!data/part1/
+!data/part1/raw/
+!data/part1/raw/.gitkeep
+!data/part1/processed/
+!data/part1/processed/.gitkeep
+!data/part2/
+!data/part2/raw/
+!data/part2/raw/.gitkeep
+!data/part2/processed/
+!data/part2/processed/.gitkeep
 
 # Python
 __pycache__/
