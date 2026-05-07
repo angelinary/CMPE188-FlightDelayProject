@@ -1,3 +1,7 @@
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import config
+
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
@@ -12,7 +16,11 @@ def main():
     print("Hello from 188 Flight Delay project")
 
     # Load the dataset
-    df = pd.read_csv("../data/raw/Airlines.csv")
+    config.assert_data_exists()
+    df = pd.read_csv(config.DATA_RAW / "Airlines.csv")
+
+    # Clean column names (the CSV has leading/trailing spaces in headers)
+    df.columns = df.columns.str.strip()
 
     # These columns have no effect on delay possibility
     columns_to_drop = [col for col in ["id", "Flight"] if col in df.columns]
