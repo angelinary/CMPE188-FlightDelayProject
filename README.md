@@ -18,70 +18,105 @@
 
 Flight delays are a frequent and costly issue in air travel, disrupting passenger schedules and reducing operational efficiency. Given the complexity of contributing factors — airline performance, route congestion, geography, and weather — predicting delays in advance is a challenging but valuable problem.
 
-This project develops a machine learning system to predict the likelihood of a flight delay using a dataset of 500,000+ domestic U.S. flights. We compare Random Forest and XGBoost classifiers, enrich the base dataset with external weather and geographic data, and evaluate models rigorously with cross-validation and standard classification metrics.
+This project develops ML models to predict the likelihood of a departure delay using two datasets: an original Kaggle benchmark (Part 1) and the full BTS 2023 domestic flight record (Part 2). We compare Random Forest, XGBoost, and a PyTorch feedforward neural network with entity embeddings across both datasets.
 
 ---
 
-## Dataset
+## Datasets
+
+### Part 1 — Kaggle Airlines Dataset (benchmark)
 
 **Source:** [Kaggle — Airlines Dataset to Predict a Delay](https://www.kaggle.com/datasets/jimschacko/airlines-dataset-to-predict-a-delay)
 
-| Feature | Type | Description |
-|---|---|---|
-| `Airline` | categorical | Carrier code (e.g., AA, DL, UA) |
-| `Flight` | int | Flight number (dropped — no predictive signal) |
-| `AirportFrom` | categorical | Origin airport IATA code |
-| `AirportTo` | categorical | Destination airport IATA code |
-| `DayOfWeek` | int (1–7) | Day of the week |
-| `Time` | int | Scheduled departure time in minutes from midnight |
-| `Length` | int | Flight duration in minutes |
-| `Delay` | binary (0/1) | Target — 1 = delayed |
+- 539,383 flights · 9 columns · binary delay target
+- No date column — likely 2008–2011 based on carrier codes (Continental Airlines `CO` ceased 2012)
+- Weather enriched with OpenMeteo climate normals (annual averages, not day-specific)
+- Delay rate: ~55%
+
+### Part 2 — BTS 2023 Domestic Flights (primary)
+
+**Source:** Bureau of Transportation Statistics On-Time Performance 2023
+
+- 6,743,404 flights · 52 columns after merge · binary delay target (`Dep_Delay_Tag`)
+- Actual flight dates (Jan–Dec 2023), daily weather observations, aircraft metadata
+- Weather merged from OpenMeteo daily records by departure airport and date
+- Airport geolocation merged for lat/lon, state, elevation
+- Delay rate: 38%
+
+---
+
+## Results
+
+### Part 2 — BTS 2023 (primary results, 100K test set)
+
+| Model | Accuracy | ROC-AUC | F1 (Delayed) | Notes |
+|---|---|---|---|---|
+| XGBoost baseline | 0.8046 | 0.8334 | 0.678 | Jan-only training sample |
+| RF baseline | 0.8027 | 0.8309 | 0.661 | Jan-only training sample |
+| XGBoost tuned | 0.8117 | 0.8352 | 0.681 | GridSearchCV, GPU |
+| RF tuned | 0.8110 | 0.8358 | 0.678 | RandomizedSearchCV |
+| MLP (sklearn) | 0.8055 | 0.8313 | 0.678 | CPU only, 50K rows |
+| **PyTorch FFNN** | **0.7980** | **0.8513** | **0.719** | GPU, 400K rows, entity embeddings |
+
+### Part 1 — Kaggle (benchmark, confirmed baselines)
+
+| Model | Accuracy | ROC-AUC | Notes |
+|---|---|---|---|
+| XGBoost baseline | 0.6438 | 0.6895 | enriched features |
+| RF baseline | 0.6384 | 0.6848 | enriched features |
+| XGBoost tuned | 0.6201 | 0.6452 | ⚠ worse than baseline — data leakage in feature engineering |
+| RF tuned | 0.6194 | 0.6478 | ⚠ worse than baseline — data leakage in feature engineering |
+
+> **Data leakage note (Part 1):** Weather enrichment in `02_feature_engineering.ipynb` runs on the full dataset before the train/test split. CV folds during tuning have seen test-row features through the enrichment step, producing inflated CV AUC (~0.856) that does not generalize (test AUC ~0.645). Fix: move enrichment inside the CV pipeline or after splitting.
 
 ---
 
 ## Modeling Pipeline
 
 ```
-Raw Data
-  └─► Preprocessing (OneHotEncoder + MinMaxScaler)
-        └─► Feature Engineering (weather + derived features)
-              └─► Feature Selection (SelectKBest chi2)
-                    └─► Model Training (Random Forest / XGBoost)
-                          └─► Hyperparameter Tuning (GridSearchCV / RandomizedSearchCV)
-                                └─► Evaluation (ROC-AUC, confusion matrix, PR curves)
+Raw Data (Part 1 or Part 2)
+  └─► 00 — Data Load & Merge (Part 2 only: flights + weather + airports)
+        └─► 01 — EDA
+              └─► 02 — Feature Engineering
+                    (target encoding, temporal features, aircraft age buckets)
+                          └─► 03 — Baseline Models (XGBoost, RF)
+                                └─► 04 — Hyperparameter Tuning (GridSearchCV / RandomizedSearchCV)
+                                      └─► 05 — Evaluation (ROC, confusion matrix, feature importance)
+                                            └─► 06 — PyTorch FFNN (entity embeddings, GPU)
 ```
 
 ---
 
-## Feature Engineering
+## PyTorch FFNN Architecture (notebook 06)
 
-### Weather Enrichment (OpenMeteo — free, no API key)
+Replaces `sklearn.MLPClassifier` with a proper GPU-trained feedforward network.
 
-The base dataset has no actual flight dates, so we use **climate normals** (monthly averages) from the [Open-Meteo Climate API](https://open-meteo.com/) matched to each airport via its geographic coordinates.
+**Key design:**
+- **Entity embeddings** for each categorical feature (airports, airlines, aircraft models, states) — learns dense delay-pattern representations instead of sparse OHE columns
+- **No SelectKBest** — BatchNorm handles scale; embeddings handle cardinality
+- **Full 400K training rows** (sklearn MLP used 50K)
+- **BCEWithLogitsLoss with pos_weight=1.616** — corrects for 38/62 class imbalance
+- **OneCycleLR** with cosine annealing
 
-Features added per origin and destination airport:
+```
+Categorical cols → Embedding layers (per col) ─┐
+                                                concat → Linear(227→512) → BN → ReLU → Dropout(0.30)
+Numeric cols (41) → StandardScaler ────────────┘       → Linear(512→256) → BN → ReLU → Dropout(0.25)
+                                                        → Linear(256→128) → BN → ReLU → Dropout(0.15)
+                                                        → Linear(128→1)  ← logit
+```
 
-- `lat`, `lon`, `elevation_ft` — geographic position
-- `avg_temperature` — monthly climate normal (°C)
-- `avg_precipitation` — monthly average precipitation (mm)
-- `avg_wind_speed` — monthly average wind speed (km/h)
+Embedding sizes (FastAI rule: `min(50, (vocab+1)//2)`):
 
-### Derived Features (from existing data)
+| Feature | Vocab | Embedding dim |
+|---|---|---|
+| Dep_Airport / Arr_Airport | 340 | 50 |
+| dep_STATE / arr_STATE | 55 | 28 |
+| Airline | 16 | 8 |
+| DepTime_label / Manufacturer | 5 | 3 |
+| season_label | 2 | 1 |
 
-| Feature | Description |
-|---|---|
-| `airline_delay_rate` | Historical delay rate per airline (target encoding, train-split only) |
-| `route_volume` | Flight count per origin→destination pair (proxy for congestion) |
-| `time_bucket` | Departure time bucketed: morning / afternoon / evening / night |
-| `is_peak_hour` | Flag for high-congestion windows (7–9 am, 5–8 pm) |
-
-### Future Dimensions (not yet implemented)
-
-- Aircraft type and age (FAA registry)
-- Airport runway capacity and scheduled departure density (BTS data)
-- Real-time METAR weather (requires actual flight dates)
-- Holiday / school break calendar flags
-- ATC delay codes (ASPM database)
+Training: 40 epochs · batch 2048 · AdamW · 0.7 min on RTX 5070 Ti
 
 ---
 
@@ -89,108 +124,100 @@ Features added per origin and destination airport:
 
 ```text
 CMPE188-FlightDelayProject/
-├── data/                              # Data lives on Google Drive, not here
-│   ├── DATA_MANIFEST.md               # Data setup instructions + file docs
-│   └── .gitkeep                       # Keeps directory in git
+├── data/                              # Placeholder structure only — data on Google Drive
+│   ├── DATA_MANIFEST.md               # Data setup instructions + file inventory
+│   ├── part1/{raw,processed}/.gitkeep
+│   └── part2/{raw,processed}/.gitkeep
 ├── notebooks/
-│   ├── 00_dataset_investigation.ipynb # Date range investigation + BTS cross-reference
-│   ├── 01_eda.ipynb                   # Exploratory data analysis
-│   ├── 02_feature_engineering.ipynb   # Weather enrichment + derived features
-│   ├── 03_model_baseline.ipynb        # RF vs XGBoost on raw features
-│   ├── 04_model_tuning.ipynb          # GridSearchCV / RandomizedSearchCV
-│   └── 05_evaluation.ipynb            # Confusion matrices, ROC, feature importance
+│   ├── part1/                         # Kaggle Airlines pipeline
+│   │   ├── 00_dataset_investigation.ipynb
+│   │   ├── 01_eda.ipynb
+│   │   ├── 02_feature_engineering.ipynb   # Weather enrichment (OpenMeteo climate normals)
+│   │   ├── 03_model_baseline.ipynb
+│   │   ├── 04_model_tuning.ipynb          # GridSearchCV (XGBoost) + RandomizedSearchCV (RF)
+│   │   └── 05_evaluation.ipynb            # TODO: stub — not yet implemented
+│   └── part2/                         # BTS 2023 pipeline
+│       ├── 00_data_load_and_merge.ipynb   # Merge flights + daily weather + airport geo
+│       ├── 01_eda.ipynb                   # EDA on 200K sample
+│       ├── 02_feature_engineering.ipynb   # Target encoding, temporal, aircraft age
+│       ├── 03_model_baseline.ipynb        # XGBoost + RF baselines (300K sample)
+│       ├── 04_model_tuning.ipynb          # Tuning with GPU XGBoost (50K tuning sample)
+│       ├── 05_evaluation.ipynb            # Confusion matrix, ROC, feature importance
+│       └── 06_neural_network.ipynb        # PyTorch FFNN with entity embeddings (GPU)
 ├── scripts/
-│   └── xgboost_pipeline.py            # Baseline script with GridSearchCV
+│   └── xgboost_pipeline.py            # Standalone XGBoost training script
 ├── config.py                          # Centralized data path config (reads from .env)
 ├── .env.example                       # Template — copy to .env and set your Drive path
-├── .env                               # Your local env (gitignored)
+├── .env                               # Local env (gitignored)
+├── AGENT_SETUP.md                     # Remote server / HPC setup guide
 ├── README.md
 └── .gitignore
 ```
 
-**Data location:** All data files (raw, processed) are stored in Google Drive.
-See `data/DATA_MANIFEST.md` for setup instructions and file documentation.
+**Data location:** All CSVs and processed files live on Google Drive (3.7 GB).
+See `data/DATA_MANIFEST.md` for the full file inventory.
 
 ---
 
 ## Setup
 
-**All data lives on Google Drive — not in git.** Set up once, then the project works on any machine.
+### Local Machine
 
 ```bash
-# 1. Clone the repo
+# 1. Clone
 git clone https://github.com/angelinary/CMPE188-FlightDelayProject.git
 cd CMPE188-FlightDelayProject
 
-# 2. Sync the shared Drive folder to your local machine
-#    https://drive.google.com/drive/folders/1VNTXNzXciRJRgqFlq38CLtXsxcS5vvrP
+# 2. Sync data from Google Drive using rclone
+#    Configure a remote named pointing to your Drive, then:
+rclone sync "gdrive-remote:sem-8/CMPE188/flight-delay-proj-data" /path/to/local/cmpe188-data -P
 
-# 3. Configure your local data path
+# 3. Configure data path
 cp .env.example .env
-# Edit .env: set FLIGHT_DELAY_DATA to your local Google Drive sync path
-#    Example (macOS): /Users/you/Library/CloudStorage/GoogleDrive-you@gmail.com/My Drive/sem-8/CMPE188/flight-delay-proj-data
+# Edit .env: FLIGHT_DELAY_DATA=/path/to/local/cmpe188-data
 
-# 4. Install dependencies
-pip install pandas scikit-learn xgboost matplotlib seaborn requests python-dotenv
+# 4. Create conda environment (torch5070 or equivalent with PyTorch + CUDA)
+conda create -n torch5070 python=3.12
+conda activate torch5070
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+pip install pandas scikit-learn xgboost matplotlib seaborn jupyter python-dotenv requests
 
-# 5. Verify setup
-python -c "import config; print(config.DATA_ROOT)"
-python scripts/xgboost_pipeline.py
+# 5. Verify
+python config.py
 
-# 6. Launch notebooks
+# 6. Run notebooks in order within each part
 jupyter lab notebooks/
 ```
 
-> **Teammates:** Ask the repo owner to share the Drive folder with you, then sync it to your local machine. Copy `.env.example` to `.env` and set your own local path.
+### Remote / HPC
+
+See `AGENT_SETUP.md` for server-specific instructions (conda env, kernel registration, data transfer via rclone/scp).
 
 ---
 
-## Known Limitations & Open Questions
+## Known Issues
 
-### Dataset Date Range — Unknown, Likely Pre-2012
+### Part 1 — Data Leakage in Tuning
 
-The dataset contains no date, month, or year column — only `DayOfWeek` (1–7). The Kaggle
-dataset page does not specify the collection period, and the dataset creator has stated
-"no such information has been provided."
+Weather enrichment (`02_feature_engineering.ipynb`) runs on the full dataset before splitting. The CV folds during GridSearchCV see test-row enriched features, producing CV AUC ~0.856 vs test AUC ~0.645 — worse than the untuned baseline. Fix: perform enrichment inside the pipeline or after splitting.
 
-However, the airline codes present in the data provide a strong constraint:
+### Part 2 — January-Only Training Sample
 
-| Carrier | Airline | Status |
-|---|---|---|
-| `CO` | Continental Airlines | Ceased **2012-03-03** (merged with United Airlines) |
-| `FL` | AirTran Airways | Ceased **2014-12-28** (merged with Southwest Airlines) |
-| `XE` | ExpressJet | Operated until ~2018 |
-| `YV` | Mesa Airlines | Still active |
+`02_feature_engineering.ipynb` loads `nrows=500_000` from the top of a date-sorted CSV, capturing only January 2023. Models trained on this sample are winter-biased and may underperform on summer flights. Fix: use random sampling (`skiprows`) or load the full dataset before splitting.
 
-The presence of `CO` is the binding constraint: **the dataset almost certainly predates March 2012**. Most likely collection window: **2008–2011**. A Kaggle commenter proposed June 2022 as the start date, but this is almost certainly incorrect.
+### Part 1 — 05_evaluation.ipynb Not Implemented
 
-> See `notebooks/00_dataset_investigation.ipynb` for the full analysis and BTS cross-reference attempt.
+All cells are `# TODO` stubs. Evaluation plots (confusion matrix, ROC, feature importance) for Part 1 are pending.
 
-### Weather Features Are Climate Normals, Not Actual Conditions
+### Dataset Date Range (Part 1)
 
-The weather features (`avg_temperature`, `avg_precipitation`, `avg_wind_speed`) are annual climate averages from the OpenMeteo API (2019 baseline), matched to each airport by geographic coordinates. They are not day-specific — a flight during a blizzard and a flight on a clear day at the same airport receive identical weather features. This limits the signal to broad geographic and seasonal trends rather than actual meteorological conditions.
-
-### Binary Delay Target Only
-
-The `Delay` column is binary (0/1). There is no information about delay duration, cause (carrier, weather, NAS/ATC, security, late aircraft), or severity. Models trained on this target can predict *whether* a delay occurs but not *why* or *by how much*.
-
-### No Tail Number — Propagation Delay Is Untrackable
-
-The dataset has no tail number column. In practice, a significant fraction of delays propagate from earlier legs of the same aircraft's rotation ("late aircraft" delays). Without tail numbers, this causal chain cannot be reconstructed. A partial proxy — `flight_sequence_delay_rate` per `(Airline, Flight, DayOfWeek)` — is used in notebook 03 as a noisy approximation.
-
-### Season / Holiday Flags — Blocked
-
-Without a confirmed date range, specific holidays and week-of-year flags cannot be reliably added. Once the date range is confirmed (via BTS matching in notebook 00), actual dates can be reconstructed and features like `is_holiday`, `month`, `week_of_year`, and `is_thanksgiving_week` can be added.
-
-### Dataset Provenance
-
-Sourced from [Kaggle](https://www.kaggle.com/datasets/jimschacko/airlines-dataset-to-predict-a-delay). The collection methodology and time period are unconfirmed by the creator. The [BTS On-Time Performance database](https://www.transtats.bts.gov/Tables.asp?QO_VQ=EFD) is the most tractable path to validating the date range.
+The Kaggle dataset has no date column. Based on carrier codes (`CO` = Continental, ceased 2012-03-03), collection is likely 2008–2011. See `notebooks/part1/00_dataset_investigation.ipynb` for the full analysis.
 
 ---
 
 ## References
 
 - [Kaggle — Airlines Dataset to Predict a Delay](https://www.kaggle.com/datasets/jimschacko/airlines-dataset-to-predict-a-delay)
+- [BTS On-Time Performance Database](https://www.transtats.bts.gov/Tables.asp?QO_VQ=EFD)
 - [Open-Meteo Climate API](https://open-meteo.com/)
-- [Priyanka Khivsara — Flight Delay Prediction (GitHub)](https://github.com/PriyankaKhivsara/flight-delay-prediction)
-- [Samith Sachidanandan — Airline Flight Delay Prediction (Kaggle)](https://www.kaggle.com/code/samithsachidanandan/airline-flight-delay-prediction)
+- Guo, C. & Berkhahn, F. (2016). Entity Embeddings of Categorical Variables. *arXiv:1604.06737*
