@@ -1,3 +1,5 @@
+import os
+import joblib
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.compose import ColumnTransformer
@@ -6,6 +8,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.feature_selection import SelectKBest, chi2
 from xgboost import XGBClassifier
+
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "models", "xgb_pipeline.joblib")
 
 
 def main():
@@ -81,6 +85,11 @@ def main():
     print("Accuracy:", accuracy)
     print("\nClassification Report:")
     print(classification_report(y_test, y_pred))
+
+    # Save the best model
+    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+    joblib.dump(grid_search.best_estimator_, MODEL_PATH)
+    print(f"\nModel saved to {MODEL_PATH}")
 
 
 if __name__ == "__main__":
