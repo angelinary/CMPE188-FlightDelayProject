@@ -1,8 +1,23 @@
-# Data — raw and small processed files are committed; large enriched CSV is not
-data/processed/*
+# Data — all data lives on Google Drive, not in git
+data/**
+
+# Keep data documentation and empty folder structure in git
+!data/
+!data/DATA_MANIFEST.md
+!data/raw/
+!data/raw/.gitkeep
+!data/processed/
 !data/processed/.gitkeep
-!data/processed/airport_weather.csv
-# Airlines_enriched.csv (~103MB) exceeds GitHub's 100MB limit — regenerate via 02_feature_engineering.ipynb
+!data/part1/
+!data/part1/raw/
+!data/part1/raw/.gitkeep
+!data/part1/processed/
+!data/part1/processed/.gitkeep
+!data/part2/
+!data/part2/raw/
+!data/part2/raw/.gitkeep
+!data/part2/processed/
+!data/part2/processed/.gitkeep
 
 # Python
 __pycache__/
@@ -21,3 +36,6 @@ env/
 
 # OS
 .DS_Store
+
+# Local env (contains paths, not committed)
+.env
