@@ -29,6 +29,10 @@ DATA_PROCESSED = DATA_PART1_PROCESSED
 DATA_PART2_RAW = DATA_ROOT / "part2" / "raw"
 DATA_PART2_PROCESSED = DATA_ROOT / "part2" / "processed"
 
+# ── Part 3: BTS multi-year dataset (Jan 2023 – Dec 2025, ~20.6M rows) ────────
+DATA_PART3_RAW = DATA_ROOT / "part3" / "raw"
+DATA_PART3_PROCESSED = DATA_ROOT / "part3" / "processed"
+
 
 def assert_data_exists():
     """Raise an error with setup instructions if DATA_ROOT is not accessible."""
@@ -89,12 +93,43 @@ def load_airports_geo():
     return load_csv(DATA_PART2_RAW / "airports_geolocation.csv")
 
 
+def load_bts_flights(nrows=None):
+    """Load Part 3 BTS multi-year flight data (Jan 2023–Dec 2025, ~20.6M rows).
+
+    Loads the combined US_flights_processed.csv from part3/raw/.
+    If that file is absent, falls back to concatenating all monthly CSVs.
+
+    Columns of note:
+        ARR_DEL15      — target: 1 if arrival delayed ≥15 min
+        OP_CARRIER     — operating carrier code
+        ORIGIN, DEST   — airport codes
+        CRS_DEP_TIME   — scheduled departure (HHMM int)
+        DEP_DELAY_NEW  — departure delay in minutes (capped at 0 for early)
+        YEAR, MONTH, DAY_OF_WEEK
+    """
+    assert_data_exists()
+    combined = DATA_PART3_RAW / "US_flights_processed.csv"
+    if combined.exists():
+        return pd.read_csv(combined, nrows=nrows, low_memory=False)
+    monthly_dir = DATA_PART3_RAW / "monthly"
+    files = sorted(monthly_dir.glob("*.csv"))
+    if not files:
+        raise FileNotFoundError(
+            f"No BTS Part 3 data found in {DATA_PART3_RAW}.\n"
+            "Run: rclone sync 'gdrive-hareee234:sem-8/CMPE188/flight-delay-proj-data' "
+            "/path/to/cmpe188-data"
+        )
+    return pd.concat([pd.read_csv(f, low_memory=False) for f in files], ignore_index=True)
+
+
 if __name__ == "__main__":
     print(f"DATA_ROOT:         {DATA_ROOT}")
     print(f"DATA_PART1_RAW:    {DATA_PART1_RAW}")
     print(f"DATA_PART1_PROC:   {DATA_PART1_PROCESSED}")
     print(f"DATA_PART2_RAW:    {DATA_PART2_RAW}")
     print(f"DATA_PART2_PROC:   {DATA_PART2_PROCESSED}")
+    print(f"DATA_PART3_RAW:    {DATA_PART3_RAW}")
+    print(f"DATA_PART3_PROC:   {DATA_PART3_PROCESSED}")
     try:
         assert_data_exists()
         print("Data directory accessible.")
