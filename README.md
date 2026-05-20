@@ -120,6 +120,12 @@ python scripts/xgboost_pipeline.py
 jupyter lab notebooks/
 ```
 
+## Run 
+```
+python xgboost_pipeline.py
+
+streamlit run flight_picker_ui.py
+```
 ---
 
 ## References
