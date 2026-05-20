@@ -96,8 +96,8 @@ def load_airports_geo():
 def load_bts_flights(nrows=None):
     """Load Part 3 BTS multi-year flight data (Jan 2023–Dec 2025, ~20.6M rows).
 
-    Loads the combined US_flights_processed.csv from part3/raw/.
-    If that file is absent, falls back to concatenating all monthly CSVs.
+    Prefers the monthly CSVs (part3/raw/monthly/*.csv) since they cover all 3 years.
+    Falls back to US_flights_processed.csv if the monthly dir is absent (2023-2024 only).
 
     Columns of note:
         ARR_DEL15      — target: 1 if arrival delayed ≥15 min
@@ -108,18 +108,20 @@ def load_bts_flights(nrows=None):
         YEAR, MONTH, DAY_OF_WEEK
     """
     assert_data_exists()
+    monthly_dir = DATA_PART3_RAW / "monthly"
+    files = sorted(monthly_dir.glob("*.csv"))
+    if files:
+        dfs = [pd.read_csv(f, low_memory=False) for f in files]
+        df = pd.concat(dfs, ignore_index=True)
+        return df if nrows is None else df.head(nrows)
     combined = DATA_PART3_RAW / "US_flights_processed.csv"
     if combined.exists():
         return pd.read_csv(combined, nrows=nrows, low_memory=False)
-    monthly_dir = DATA_PART3_RAW / "monthly"
-    files = sorted(monthly_dir.glob("*.csv"))
-    if not files:
-        raise FileNotFoundError(
-            f"No BTS Part 3 data found in {DATA_PART3_RAW}.\n"
-            "Run: rclone sync 'gdrive-hareee234:sem-8/CMPE188/flight-delay-proj-data' "
-            "/path/to/cmpe188-data"
-        )
-    return pd.concat([pd.read_csv(f, low_memory=False) for f in files], ignore_index=True)
+    raise FileNotFoundError(
+        f"No BTS Part 3 data found in {DATA_PART3_RAW}.\n"
+        "Run: rclone sync 'gdrive-hareee234:sem-8/CMPE188/flight-delay-proj-data' "
+        "/path/to/cmpe188-data"
+    )
 
 
 if __name__ == "__main__":
