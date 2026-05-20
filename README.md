@@ -195,6 +195,18 @@ See `AGENT_SETUP.md` for server-specific instructions (conda env, kernel registr
 
 ---
 
+## Run
+
+```bash
+# XGBoost pipeline (Part 1)
+python scripts/xgboost_pipeline.py
+
+# Flight picker UI
+streamlit run scripts/flight_picker_ui.py
+```
+
+---
+
 ## Known Issues
 
 ### Part 1 — Data Leakage in Tuning
